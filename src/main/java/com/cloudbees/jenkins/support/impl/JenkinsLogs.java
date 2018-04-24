@@ -47,7 +47,7 @@ public class JenkinsLogs extends Component {
     private static final Logger LOGGER = Logger.getLogger(JenkinsLogs.class.getName());
     private static final int MAX_ROTATE_LOGS = Integer.getInteger(JenkinsLogs.class.getName() + ".MAX_ROTATE_LOGS", 9);
     private final Map<String,LogRecorder> logRecorders = Jenkins.getInstance().getLog().logRecorders;
-    private final File customLogs = new File(new File(Jenkins.getInstance().getRootDir(), "logs"), "custom");
+    private final File customLogs = new File(getLogsRoot(), "custom");
 
     @NonNull
     @Override
@@ -117,7 +117,7 @@ public class JenkinsLogs extends Component {
                 result.add(new FileContent(new ContentData("other-logs/" + f.getName(), shouldAnonymize), f));
             }
         }
-        File logs = new File(jenkins.getRootDir(), "logs");
+        File logs = getLogsRoot();
         files = logs.listFiles(ROTATED_LOGFILE_FILTER);
         if (files != null) {
             for (File f : files) {
@@ -131,6 +131,22 @@ public class JenkinsLogs extends Component {
             for (File f : files) {
                 result.add(new FileContent(new ContentData("other-logs/" + f.getName(), shouldAnonymize), f));
             }
+        }
+    }
+
+    /**
+     * Returns the root directory for logs (historically always found under <code>$JENKINS_HOME/logs</code>.
+     * Configurable since Jenkins 2.114.
+     *
+     * @see hudson.triggers.SafeTimerTask#LOGS_ROOT_PATH_PROPERTY
+     * @return the root directory for logs.
+     */
+    private File getLogsRoot() {
+        final String overriddenLogsRoot = System.getProperty("hudson.triggers.SafeTimerTask.logsTargetDir");
+        if (overriddenLogsRoot == null) {
+            return new File(Jenkins.get().getRootDir(), "logs");
+        } else {
+            return new File(overriddenLogsRoot);
         }
     }
 
