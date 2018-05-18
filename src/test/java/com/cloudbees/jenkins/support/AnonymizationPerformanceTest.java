@@ -32,6 +32,7 @@ import com.github.javafaker.Faker;
 import hudson.ExtensionList;
 import hudson.model.FreeStyleProject;
 import hudson.security.Permission;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.OutputStream;
 import java.io.Writer;
@@ -51,27 +52,39 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.MockFolder;
 import org.jvnet.hudson.test.TestExtension;
 
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.Assert.assertThat;
 
 @Ignore("Intended to be run manually")
 public class AnonymizationPerformanceTest {
-    
+
+    /**
+     * How many times we generate a support bundle with anonymization enabled
+     * and disabled to get an average bundle creation time.
+     */
     private static final int REPETITIONS = 10;
-    private static final int ITEMS_TO_CREATE = 50;
+    /**
+     * Experimentally determined factor of how many times slower we expect
+     * bundle generation to take when anonymization is enabled than when it is
+     * disabled.
+     */
+    private static final int EXPECTED_ANONYMIZATION_SLOWDOWN_FACTOR = 5;
+
+    private static final int ITEMS_TO_CREATE = 100;
     private static final int NODES_TO_CREATE = 5;
     private static final int LINES_OF_TEXT_TO_ADD = 100_000;
-    
+
     @Rule
     public JenkinsRule r = new JenkinsRule();
-    
+
     @Rule
     public TemporaryFolder temp = new TemporaryFolder();
-    
+
     @Before
     public void setup() throws Exception {
         // Create some items that will be anonymized.
-        for (int i = 0; i < ITEMS_TO_CREATE; i++) {
+        for (int i = 0; i < ITEMS_TO_CREATE / 2; i++) {
             MockFolder folder = r.createFolder("TestFolder" + i);
             folder.createProject(FreeStyleProject.class, "TestJob" + i);
         }
@@ -88,33 +101,33 @@ public class AnonymizationPerformanceTest {
             }
         }
     }
-    
+
     @Test
-    public void generateBundle() throws Exception {
-        File file = temp.newFile();
+    public void compareBundleGenerationTimes() throws Exception {
         assertThat(ExtensionList.lookup(Component.class).get(TestFileComponent.class), notNullValue());
-        
+
         ContentFilters.get().setEnabled(false);
         Instant start = Instant.now();
         for (int i = 0; i < REPETITIONS; i++) {
-            try (OutputStream os = Files.newOutputStream(file.toPath())) {
-                SupportPlugin.writeBundle(os);
+            try (OutputStream out = new ByteArrayOutputStream()) {
+                SupportPlugin.writeBundle(out);
             }
-            Files.delete(file.toPath());
         }
-        System.out.println("Average generation time for unanonymized bundle: " + Duration.between(start, Instant.now()).dividedBy(REPETITIONS));
-        
+        Duration averageDurationUnanonymized = Duration.between(start, Instant.now()).dividedBy(REPETITIONS);
+        System.out.println("Average generation time for unanonymized bundle: " + averageDurationUnanonymized);
+
         ContentFilters.get().setEnabled(true);
         start = Instant.now();
         for (int i = 0; i < REPETITIONS; i++) {
-            try (OutputStream os = Files.newOutputStream(file.toPath())) {
-                SupportPlugin.writeBundle(os);
+            try (OutputStream out = new ByteArrayOutputStream()) {
+                SupportPlugin.writeBundle(out);
             }
-            Files.delete(file.toPath());
         }
-        System.out.println("Average generation time for anonymized bundle: " + Duration.between(start, Instant.now()).dividedBy(REPETITIONS));
+        Duration averageDurationAnonymized = Duration.between(start, Instant.now()).dividedBy(REPETITIONS);
+        System.out.println("Average generation time for anonymized bundle: " + averageDurationAnonymized);
+        assertThat(averageDurationAnonymized, lessThanOrEqualTo(averageDurationUnanonymized.multipliedBy(EXPECTED_ANONYMIZATION_SLOWDOWN_FACTOR)));
     }
-    
+
     @TestExtension
     public static class TestFileComponent extends Component {
         @Override
